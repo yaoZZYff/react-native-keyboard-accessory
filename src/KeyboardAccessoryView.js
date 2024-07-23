@@ -84,7 +84,8 @@ class KeyboardAccessoryView extends Component {
       ios: keyboardEvent.endCoordinates.height,
       android: this.props.androidAdjustResize
         ? 0
-        : keyboardEvent.endCoordinates.height
+        : keyboardEvent.endCoordinates.height,
+      harmony: keyboardEvent.endCoordinates.height
     });
 
     const keyboardAnimate = () => {
@@ -122,7 +123,7 @@ class KeyboardAccessoryView extends Component {
 
     if (animateOn === 'all' || Platform.OS === animateOn) {
       LayoutAnimation.configureNext(
-        animationConfig || accessoryAnimation(keyboardEvent.duration, keyboardEvent.easing, animationConfig)
+        accessoryAnimation(keyboardEvent.duration, keyboardEvent.easing, animationConfig)
       );
     }
 
@@ -183,7 +184,7 @@ class KeyboardAccessoryView extends Component {
 
 KeyboardAccessoryView.propTypes = {
   style: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  animateOn: PropTypes.oneOf(["ios", "android", "all", "none"]),
+  animateOn: PropTypes.oneOf(["ios", "android", "all", "none", "harmony"]),
   animationConfig: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
   bumperHeight: PropTypes.number,
   visibleOpacity: PropTypes.number,
