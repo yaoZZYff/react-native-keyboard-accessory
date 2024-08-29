@@ -2,213 +2,226 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 
 import {
-  StyleSheet,
   View,
-  Text,
-  TouchableOpacity,
   Keyboard,
+  LayoutAnimation,
+  Platform,
+  StyleSheet,
+  Dimensions
 } from 'react-native';
 
-import KeyboardAccessoryView from './KeyboardAccessoryView';
-import AccessoryArrowButton from './components/AccessoryArrowButton';
+const accessoryAnimation = (duration, easing, animationConfig = null) => {
 
-class KeyboardAccessoryNavigation extends Component {
-  handleDoneButton = () => {
-    this.props.onDone && this.props.onDone();
-    Keyboard.dismiss();
+  if (animationConfig) {
+    if (typeof animationConfig === 'function') {
+      return animationConfig(duration, easing);
+    }
+    return animationConfig;
+  }
+
+  if (Platform.OS === 'android') {
+    return {
+      duration: 200,
+      create: {
+        duration: 200,
+        type: LayoutAnimation.Types.linear,
+        property: LayoutAnimation.Properties.opacity
+      },
+      update: {
+        type: LayoutAnimation.Types.linear,
+      }
+    }
+  }
+
+  return LayoutAnimation.create(
+    duration,
+    LayoutAnimation.Types[easing],
+    LayoutAnimation.Properties.opacity,
+  )
+}
+
+const { height, width } = Dimensions.get('window')
+const isSafeAreaSupported = Platform.OS === 'ios' && (height > 800 || width > 800)
+
+class KeyboardAccessoryView extends Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      keyboardHeight: 0,
+      accessoryHeight: 50,
+      visibleAccessoryHeight: 50,
+      isKeyboardVisible: false,
+    }
+  }
+
+  componentDidMount () {
+    const keyboardShowEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const keyboardHideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    this.keyboardShowEventListener = Keyboard.addListener(keyboardShowEvent, this.handleKeyboardShow);
+    this.keyboardHideEventListener = Keyboard.addListener(keyboardHideEvent, this.handleKeyboardHide);
+  }
+
+  componentWillUnmount() {
+    this.keyboardShowEventListener.remove();
+    this.keyboardHideEventListener.remove();
+  }
+
+  handleChildrenLayout = (layoutEvent) => {
+    this.setState({
+      visibleAccessoryHeight: layoutEvent.nativeEvent.layout.height,
+      accessoryHeight: this.props.alwaysVisible || this.state.isKeyboardVisible ? layoutEvent.nativeEvent.layout.height : 0,
+    });
+  }
+
+  handleKeyboardShow = (keyboardEvent) => {
+    if (!keyboardEvent.endCoordinates) {
+      return;
+    }
+
+    const keyboardHeight = Platform.select({
+      ios: keyboardEvent.endCoordinates.height,
+      android: this.props.androidAdjustResize
+        ? 0
+        : keyboardEvent.endCoordinates.height,
+      harmony: keyboardEvent.endCoordinates.height
+    });
+
+    const keyboardAnimate = () => {
+      const { animationConfig, animateOn } = this.props;
+
+      if (animateOn === 'all' || Platform.OS === animateOn) {
+        LayoutAnimation.configureNext(
+          accessoryAnimation(keyboardEvent.duration, keyboardEvent.easing, animationConfig)
+        );
+      }
+
+      this.setState({
+        isKeyboardVisible: true,
+        keyboardHeight: keyboardHeight
+      })
+    };
+
+    if (Platform.OS === 'ios' || typeof this.props.onKeyboardShowDelay !== 'number') {
+      keyboardAnimate();
+    } else {
+      setTimeout(() => {
+        keyboardAnimate()
+      }, this.props.onKeyboardShowDelay);
+    }
+
+    this.setState({
+      isKeyboardVisible: true,
+      keyboardHeight: keyboardHeight,
+      accessoryHeight: this.state.visibleAccessoryHeight,
+    })
+  }
+
+  handleKeyboardHide = (keyboardEvent) => {
+    const { animateOn, animationConfig } = this.props;
+
+    if (animateOn === 'all' || Platform.OS === animateOn) {
+      animationConfig || LayoutAnimation.configureNext(
+        accessoryAnimation(keyboardEvent.duration, keyboardEvent.easing, animationConfig)
+      );
+    }
+
+    this.setState({
+      isKeyboardVisible: false,
+      keyboardHeight: 0,
+      accessoryHeight: this.props.alwaysVisible ? this.state.visibleAccessoryHeight : 0,
+    })
   }
 
   render() {
     const {
-      nextButton,
-      previousButton,
-      doneButton,
-      doneButtonTitle,
-      infoContainer,
-      infoMessage,
-      tintColor,
-      onNext,
-      onPrevious,
-      nextDisabled,
-      previousDisabled,
-      nextHidden,
-      previousHidden,
-      accessoryStyle,
-      nextButtonStyle,
-      previousButtonStyle,
-      doneButtonStyle,
-      doneButtonTitleStyle,
-      doneButtonHitslop,
-      infoMessageStyle,
-      nextButtonDirection,
-      nextButtonHitslop,
-      previousButtonDirection,
-      previousButtonHitslop,
-      ...passThroughProps
+      isKeyboardVisible,
+      accessoryHeight,
+      keyboardHeight,
+    } = this.state;
+
+    const {
+      bumperHeight,
+      alwaysVisible,
+      visibleOpacity,
+      hiddenOpacity,
+      hideBorder,
+      heightProperty,
+      style,
+      inSafeAreaView,
+      safeAreaBumper,
+      avoidKeyboard,
+      children,
     } = this.props;
 
-    // Are both arrows hidden?
-    const arrowsHidden = nextHidden && previousHidden;
-
-    // Is there an info message/container?
-    const noInfo = !infoMessage && !infoContainer;
-
-    const accessoryContainerStyle = [
-      styles.accessoryContainer,
-      arrowsHidden && noInfo ? styles.accessoryContainerReverse : null,
-      accessoryStyle,
-    ];
+    const visibleHeight = accessoryHeight + (avoidKeyboard ? keyboardHeight : 0);
+    const applySafeArea = isSafeAreaSupported && inSafeAreaView;
+    const isChildRenderProp = typeof children === "function";
 
     return (
-      <KeyboardAccessoryView { ...passThroughProps }>
-        <View style={accessoryContainerStyle}>
-          { !arrowsHidden && (
-            <View style={styles.leftContainer}>
-              <AccessoryArrowButton
-                style={[styles.previousButton, previousButtonStyle]}
-                hidden={previousHidden}
-                disabled={previousDisabled}
-                direction={previousButtonDirection}
-                hitSlop={previousButtonHitslop}
-                customButton={previousButton}
-                tintColor={tintColor}
-                onPress={onPrevious}
-              />
-              <AccessoryArrowButton
-                style={nextButtonStyle}
-                hidden={nextHidden}
-                disabled={nextDisabled}
-                direction={nextButtonDirection}
-                hitSlop={nextButtonHitslop}
-                customButton={nextButton}
-                tintColor={tintColor}
-                onPress={onNext}
-              />
-            </View>
-          )}
-          { (infoMessage || infoContainer) && (
-            <View style={styles.infoContainer}>
-              {infoContainer || (
-                <Text style={[infoMessageStyle, {
-                  color: tintColor,
-                }]}>
-                  {infoMessage}
-                </Text>
-              )}
-            </View>
-          )}
-          <TouchableOpacity
-            style={[styles.doneButton, doneButtonStyle]}
-            onPress={this.handleDoneButton}
-            hitSlop={doneButtonHitslop}>
-            { doneButton ||
-              <Text style={[
-                styles.doneButtonText,
-                doneButtonTitleStyle,
-                {
-                  color: tintColor,
-                }
-              ]}>
-                {doneButtonTitle}
-              </Text>
-            }
-          </TouchableOpacity>
+      <View style={{ [heightProperty]: (isKeyboardVisible || alwaysVisible ? visibleHeight  : 0) }}>
+        <View style={[
+          styles.accessory,
+          !hideBorder && styles.accessoryBorder,
+          style,
+          {
+            opacity: (isKeyboardVisible || alwaysVisible ? visibleOpacity : hiddenOpacity),
+            bottom: keyboardHeight - bumperHeight - (applySafeArea ? 20 : 0),
+            [heightProperty]: accessoryHeight + bumperHeight + (applySafeArea ? (!isKeyboardVisible ? 20 : -10) : 0),
+          }
+        ]}>
+          <View onLayout={this.handleChildrenLayout}>
+            { isChildRenderProp
+               ? children({ isKeyboardVisible })
+               : children }
+          </View>
         </View>
-      </KeyboardAccessoryView>
+      </View>
     );
   }
 }
 
-KeyboardAccessoryNavigation.propTypes = {
-  ...KeyboardAccessoryView.propTypes,
-  doneButtonTitle: PropTypes.string,
-  infoMessage: PropTypes.string,
-  doneButton: PropTypes.element,
-  nextButton: PropTypes.element,
-  previousButton: PropTypes.element,
-  infoContainer: PropTypes.element,
-  onNext: PropTypes.func,
-  onPrevious: PropTypes.func,
-  onDone: PropTypes.func,
-  nextDisabled: PropTypes.bool,
-  previousDisabled: PropTypes.bool,
-  doneDisabled: PropTypes.bool,
-  nextHidden: PropTypes.bool,
-  previousHidden: PropTypes.bool,
-  tintColor: PropTypes.string,
-  accessoryStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  previousButtonStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  nextButtonStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  doneButtonStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  doneButtonTitleStyle: PropTypes.oneOfType([
-    PropTypes.object,
-    PropTypes.array,
-  ]),
-  doneButtonHitslop: PropTypes.oneOfType([
-    PropTypes.number,
-    PropTypes.shape({
-      left: PropTypes.number,
-      top: PropTypes.number,
-      right: PropTypes.number,
-      bottom: PropTypes.number,
-    }),
-  ]),
-  infoMessageStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
-  nextButtonDirection: PropTypes.oneOf(["up", "down", "left", "right"]),
-  nextButtonHitslop: PropTypes.oneOfType([
-    PropTypes.number,
-    PropTypes.shape({
-      left: PropTypes.number,
-      top: PropTypes.number,
-      right: PropTypes.number,
-      bottom: PropTypes.number,
-    }),
-  ]),
-  previousButtonDirection: PropTypes.oneOf(["up", "down", "left", "right"]),
-  previousButtonHitslop: PropTypes.oneOfType([
-    PropTypes.number,
-    PropTypes.shape({
-      left: PropTypes.number,
-      top: PropTypes.number,
-      right: PropTypes.number,
-      bottom: PropTypes.number,
-    }),
-  ]),
+KeyboardAccessoryView.propTypes = {
+  style: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+  animateOn: PropTypes.oneOf(["ios", "android", "all", "none", "harmony"]),
+  animationConfig: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
+  bumperHeight: PropTypes.number,
+  visibleOpacity: PropTypes.number,
+  heightProperty: PropTypes.oneOf(["height", "minHeight"]),
+  hiddenOpacity: PropTypes.number,
+  onKeyboardShowDelay: PropTypes.oneOfType([PropTypes.number, PropTypes.bool]),
+  androidAdjustResize: PropTypes.bool,
+  alwaysVisible: PropTypes.bool,
+  hideBorder: PropTypes.bool,
+  inSafeAreaView: PropTypes.bool,
+  avoidKeyboard: PropTypes.bool,
 };
 
-KeyboardAccessoryNavigation.defaultProps = {
-  doneButtonTitle: 'Done',
-  tintColor: '#007AFF',
-  nextDisabled: false,
-  previousDisabled: false,
-  nextHidden: false,
-  previousHidden: false,
-  nextButtonDirection: 'down',
-  previousButtonDirection: 'up',
+KeyboardAccessoryView.defaultProps = {
+  animateOn: 'ios',
+  bumperHeight: 15,
+  visibleOpacity: 1,
+  heightProperty: 'height',
+  hiddenOpacity: 0,
+  androidAdjustResize: false,
+  alwaysVisible: false,
+  hideBorder: false,
+  inSafeAreaView: false,
+  avoidKeyboard: false,
 }
 
 const styles = StyleSheet.create({
-  accessoryContainer: {
-    height: 45,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: 15,
-    paddingRight: 15,
+  accessory: {
+    position: 'absolute',
+    right: 0,
+    left: 0,
+    backgroundColor: '#EFF0F1',
   },
-  accessoryContainerReverse: {
-    flexDirection: 'row-reverse',
-  },
-  leftContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  previousButton: {
-    marginRight: 16,
-  },
-  doneButtonText: {
-    fontWeight: 'bold'
-  },
+  accessoryBorder: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.2)',
+  }
 })
 
-export default KeyboardAccessoryNavigation;
+export default KeyboardAccessoryView;
